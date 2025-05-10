@@ -1,3 +1,6 @@
+.env
+.envrc
+
 # k8s-gen binary name
 k8s
 

@@ -9,9 +9,9 @@
 
     name:: name,
     description:: this.name + ' jsonnet library',
-    repository:: 'github.com/jsonnet-libs/' + this.name + this.suffix,
+    repository:: std.extVar('repository') + this.name + this.suffix,
     branch:: 'main',
-    site_url:: 'https://jsonnet-libs.github.io/' + this.name + this.suffix,
+    site_url:: std.extVar('siteUrl') + this.name + this.suffix,
 
     'skel/LICENSE': importstr '../LICENSE',
 
@@ -47,19 +47,19 @@
     ),
 
     local mkdocs = import './mkdocs.jsonnet',
-    mkdocs_config:: mkdocs.config {
+    mkdocs_config:: mkdocs.config + {
       site_name: this.description,
       site_url: this.site_url,
       repo_url: 'https://' + this.repository,
     },
 
-    mkdocs_github_action:: mkdocs.action {
+    mkdocs_github_action:: mkdocs.action + {
       branch:: this.branch,
     },
 
     'skel/mkdocs.yml': std.manifestYamlDoc(this.mkdocs_config, true),
 
-    'skel/.github/workflows/main.yml': std.manifestYamlDoc(this.mkdocs_github_action, true),
+    // 'skel/.github/workflows/main.yml': std.manifestYamlDoc(this.mkdocs_github_action, true),
     'skel/docs/stylesheets/extra.css': importstr 'files/mkdocs.css',
 
     'skel/requirements.txt': |||
