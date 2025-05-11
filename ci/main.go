@@ -1,23 +1,8 @@
-// A generated module for Ci functions
-//
-// This module has been generated via dagger init and serves as a reference to
-// basic module structure as you get started with Dagger.
-//
-// Two functions have been pre-created. You can modify, delete, or add to them,
-// as needed. They demonstrate usage of arguments and return types using simple
-// echo and grep commands. The functions can be called from the dagger CLI or
-// from one of the SDKs.
-//
-// The first line in this comment block is a short description line and the
-// rest is a long description with more detail on the module's purpose or usage,
-// if appropriate. All modules should have a short description.
-
 package main
 
 import (
 	"context"
 	"dagger/ci/internal/dagger"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -83,12 +68,17 @@ func (m *Ci) WithGoContainer() *dagger.Container {
 	return ctr
 }
 
+type JsonnetLib struct {
+	Name string
+	Dir  *dagger.Directory
+}
+
 func (m *Ci) WithJsonnetLibDirs(
 	ctx context.Context,
 	// +optional
 	ctr *dagger.Container,
 	libsRegex string,
-) (jsonnetLibDirs []*dagger.Directory, err error) {
+) (jsonnetLibDirs []JsonnetLib, err error) {
 	if ctr == nil {
 		ctr = dag.Container().From(DefaultCtrImgFind)
 	}
@@ -126,7 +116,10 @@ func (m *Ci) WithJsonnetLibDirs(
 	}
 
 	for _, configFilepath := range strings.Split(strings.TrimSpace(configFileOutput), "\n") {
-		jsonnetLibDirs = append(jsonnetLibDirs, m.LibsRoot.Directory(filepath.Dir(configFilepath)))
+		jsonnetLibDirs = append(jsonnetLibDirs, JsonnetLib{
+			Name: filepath.Base(filepath.Dir(configFilepath)),
+			Dir:  m.LibsRoot.Directory(filepath.Dir(configFilepath)),
+		})
 	}
 
 	return
@@ -139,54 +132,32 @@ func (m *Ci) Build(
 	// +default=5
 	parallel int,
 ) (*dagger.Directory, error) {
-	ctr := m.WithGoContainer()
-
 	jsonnetLibDirs, err := m.WithJsonnetLibDirs(ctx, nil, libsRegex)
 	if err != nil {
 		return nil, err
 	}
 
-	eg, gctx := errgroup.WithContext(ctx)
+	eg := errgroup.Group{}
 	eg.SetLimit(parallel)
 
 	artifactsDir := dag.Directory()
 	for _, jsonnetLibDir := range jsonnetLibDirs {
 		eg.Go(func() error {
+			ctr := m.WithGoContainer()
+
 			ctrInputDirLib := "/INPUT"
 			ctrOutputDirRoot := "/OUTPUT"
-
-			ctrWorkdirOriginal, err := ctr.Workdir(ctx)
-			if err != nil {
-				return err
-			}
-
-			ctr = ctr.WithMountedDirectory(ctrInputDirLib, jsonnetLibDir)
-
-			jsonnetLibName, err := ctr.
-				WithWorkdir(ctrInputDirLib).
-				WithExec([]string{
-					"sh", "-c",
-					fmt.Sprintf(`cat %s | grep 'name=' | cut -d"'" -f2`, m.ConfigFilenameJsonnet),
-				}).
-				Stdout(gctx)
-			if err != nil {
-				return err
-			}
-			jsonnetLibName = strings.TrimSpace(jsonnetLibName)
-			if jsonnetLibName == "" {
-				return fmt.Errorf("could not find name for config file: '%s'", m.ConfigFilenameJsonnet)
-			}
-
-			ctrOutputDirLib := filepath.Join(ctrOutputDirRoot, jsonnetLibName)
+			ctrOutputConfigDirRoot := "/OUTPUT_CONFIG"
+			ctrOutputDirLib := filepath.Join(ctrOutputDirRoot, jsonnetLibDir.Name)
 
 			ctr = ctr.
-				WithWorkdir(ctrWorkdirOriginal).
+				WithMountedDirectory(ctrInputDirLib, jsonnetLibDir.Dir).
 				WithExec([]string{
 					"mkdir", "-p", ctrOutputDirLib,
 				}).
 				WithExec([]string{
 					"jsonnet", "--create-output-dirs",
-					"--multi", ctrOutputDirLib,
+					"--multi", ctrOutputConfigDirRoot,
 					"--jpath", ".",
 					"--ext-str", ExtVarRepository + "=" + m.Repository,
 					"--ext-str", ExtVarSiteUrl + "=" + m.SiteUrl,
@@ -195,11 +166,11 @@ func (m *Ci) Build(
 				WithExec([]string{
 					"k8s-gen",
 					"-o", ctrOutputDirLib,
-					"-c", filepath.Join(ctrOutputDirLib, ConfigFilenameYAML),
+					"-c", filepath.Join(ctrOutputConfigDirRoot, ConfigFilenameYAML),
 				})
 
 			outputDir := ctr.Directory(ctrOutputDirLib)
-			artifactsDir = artifactsDir.WithDirectory(jsonnetLibName, outputDir)
+			artifactsDir = artifactsDir.WithDirectory(jsonnetLibDir.Name, outputDir)
 
 			return nil
 		})
