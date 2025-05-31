@@ -11,14 +11,14 @@ local manifests = [
 ];
 
 config.new(
-  name='argo-cd',
+  name='argo-events',
   specs=[
     {
       output: version,
       prefix: '^io\\.argoproj\\..*',
-      localName: 'argo_cd',
+      localName: 'argo_events',
       crds: [
-        'https://raw.githubusercontent.com/argoproj/argo-cd/v%s/manifests/base/crds/%s' %
+        'https://raw.githubusercontent.com/argoproj/argo-events/v%s/manifests/base/crds/%s' %
         [version, manifest]
         for manifest in manifests
       ],
